@@ -124,6 +124,9 @@ venv/
 .vscode/
 *.vsix
 *.war
+*.wav
+*.Wav
+*.WAV
 *.xcodeproj/
 *.xcuserdata/
 *.xcuserstate
