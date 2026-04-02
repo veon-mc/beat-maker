@@ -1,3 +1,4 @@
 [submodule "libraries"]
 	path = libraries
 	url = ../../../4dev4d-libraries
+	branch = main
