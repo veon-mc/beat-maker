@@ -8,10 +8,19 @@ include_directories(
         "libraries/imgui"
         "libraries/portaudio/include"
         "libraries/sdl/include"
+        "src"
+        "src/audio"
+        "src/ui"
 )
 
 add_executable(drum_machine
         main.cpp
+        src/audio/AudioPlayer.cpp
+        src/audio/Delay.cpp
+        src/audio/Mixer.cpp
+        src/audio/Sequencer.cpp
+        src/audio/DrumMachine.cpp
+        src/ui/MainWindow.cpp
         libraries/imgui/imgui.cpp
         libraries/imgui/imgui_demo.cpp
         libraries/imgui/imgui_draw.cpp
@@ -19,6 +28,17 @@ add_executable(drum_machine
         libraries/imgui/imgui_tables.cpp
         libraries/imgui/backends/imgui_impl_sdl3.cpp
         libraries/imgui/backends/imgui_impl_sdlrenderer3.cpp
+        src/audio/Mixer.cpp
+        src/audio/Mixer.h
+        src/audio/Mixer.h
+        src/audio/AudioPlayer.cpp
+        src/audio/Delay.cpp
+        src/audio/Sequencer.cpp
+        src/audio/DrumMachine.cpp
+        src/ui/MainWindow.cpp
+        src/audio/AudioFileReader.h
+        src/audio/AudioFileReader.cpp
+        src/audio/AudioPlayer.h
 )
 
 if (APPLE)

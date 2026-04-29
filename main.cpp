@@ -5,6 +5,11 @@
 #include <portaudio.h>
 #include <cstdio>
 #include <cmath>
+#include "AudioFileReader.h"
+#include <vector>
+#include "AudioPlayer.h"
+
+static AudioPlayer testPlayer;
 
 static int audioCallback(const void* /*input*/,
                          void* output,
@@ -14,23 +19,7 @@ static int audioCallback(const void* /*input*/,
                          void* /*userData*/)
 {
     float* out = static_cast<float*>(output);
-
-    // Variables persistantes entre deux appels de la callback :
-    // 'static' fait qu'elles gardent leur valeur entre les appels.
-    static double phase = 0.0;
-    const double sampleRate = 44100.0;
-    const double frequency = 440.0;       // La 440 Hz
-    const double phaseIncrement = 2.0 * M_PI * frequency / sampleRate;
-    const float amplitude = 0.2f;          // ~20% du max, pour ne pas exploser les oreilles
-
-    for (unsigned long i = 0; i < framesPerBuffer; ++i) {
-        float sample = amplitude * static_cast<float>(std::sin(phase));
-        *out++ = sample; // canal gauche
-        *out++ = sample; // canal droit
-        phase += phaseIncrement;
-        if (phase >= 2.0 * M_PI) phase -= 2.0 * M_PI; // évite que phase grandisse à l'infini
-    }
-
+    testPlayer.process(out, static_cast<int>(framesPerBuffer));
     return paContinue;
 }
 
@@ -58,6 +47,7 @@ int main(int, char**)
         printf("Erreur Pa_Initialize: %s\n", Pa_GetErrorText(err));
         return -1;
     }
+    testPlayer.loadFile("Kick1.wav", 44100);
 
     PaStream* stream = nullptr;
     err = Pa_OpenDefaultStream(
@@ -94,6 +84,12 @@ int main(int, char**)
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
+        ImGui::Begin("Test");
+        if (ImGui::Button("Play kick")) {
+            testPlayer.start();
+        }
+        ImGui::End();
+
 
         ImGui::ShowDemoWindow();
 
