@@ -39,6 +39,7 @@ add_executable(drum_machine
         src/audio/AudioFileReader.h
         src/audio/AudioFileReader.cpp
         src/audio/AudioPlayer.h
+        src/audio/Sequencer.h
 )
 
 if (APPLE)
