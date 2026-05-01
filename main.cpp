@@ -12,11 +12,13 @@
 #include "Mixer.h"
 #include <mutex>
 #include <atomic>
+#include "Delay.h"
 
 static AudioPlayer players[4];
 static Sequencer sequencer;
 static constexpr int SAMPLE_RATE = 44100;
 static Mixer mixer;
+static Delay delays[4];
 // État partagé pour la boîte de dialogue de fichier.
 static std::mutex pendingFileMutex;
 static std::string pendingFilePath;       // chemin sélectionné, vide si rien à charger
@@ -59,6 +61,7 @@ static int audioCallback(const void*, void* output,
     static float tempBuffer[256 * 2];
     for (int t = 0; t < 4; ++t) {
         players[t].process(tempBuffer, numFrames);
+        delays[t].process(tempBuffer, numFrames);
 
         // Volume effectif = 0 si muté, sinon le volume de la piste.
         float effectiveVolume = players[t].isMuted() ? 0.0f : players[t].getVolume();
@@ -92,6 +95,9 @@ int main(int, char**)
     if (err != paNoError) {
         printf("Erreur Pa_Initialize: %s\n", Pa_GetErrorText(err));
         return -1;
+    }
+    for (int t = 0; t < 4; ++t) {
+        delays[t].init(SAMPLE_RATE, 1.0f);
     }
 
     // Câble le player 0 au sequencer.
@@ -276,20 +282,27 @@ int main(int, char**)
                 false             // false = sélection unique
             );
         }
-        
-        static bool delayDummy[4]   = {false, false, false, false};
-        static float delayTimeDummy[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        static float delayMixDummy[4]  = {0.0f, 0.0f, 0.0f, 0.0f};
 
         bool reverseState = players[selectedTrack].isReverse();
         if (ImGui::Checkbox("Reverse", &reverseState)) {
             players[selectedTrack].setReverse(reverseState);
         }
-        ImGui::Checkbox("Delay",   &delayDummy[selectedTrack]);
+        bool delayState = delays[selectedTrack].isEnabled();
+        if (ImGui::Checkbox("Delay", &delayState)) {
+            delays[selectedTrack].setEnabled(delayState);
+        }
+
+        float delayTime = delays[selectedTrack].getTime();
         ImGui::SetNextItemWidth(150);
-        ImGui::SliderFloat("Delay time", &delayTimeDummy[selectedTrack], 0.0f, 1.0f, "%.3f");
+        if (ImGui::SliderFloat("Delay time", &delayTime, 0.0f, 1.0f, "%.3f")) {
+            delays[selectedTrack].setTime(delayTime);
+        }
+
+        float delayMix = delays[selectedTrack].getMix();
         ImGui::SetNextItemWidth(150);
-        ImGui::SliderFloat("Delay mix",  &delayMixDummy[selectedTrack],  0.0f, 1.0f, "%.3f");
+        if (ImGui::SliderFloat("Delay mix", &delayMix, 0.0f, 1.0f, "%.3f")) {
+            delays[selectedTrack].setMix(delayMix);
+        }
 
         ImGui::EndChild();
 
