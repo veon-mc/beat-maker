@@ -10,11 +10,36 @@
 #include "AudioPlayer.h"
 #include "Sequencer.h"
 #include "Mixer.h"
+#include <mutex>
+#include <atomic>
 
 static AudioPlayer players[4];
 static Sequencer sequencer;
 static constexpr int SAMPLE_RATE = 44100;
 static Mixer mixer;
+// État partagé pour la boîte de dialogue de fichier.
+static std::mutex pendingFileMutex;
+static std::string pendingFilePath;       // chemin sélectionné, vide si rien à charger
+static std::atomic<int> pendingFileTrack{-1}; // sur quelle piste charger (-1 = rien)
+
+// Callback appelée par SDL quand l'utilisateur a choisi un fichier (ou annulé).
+static void SDLCALL fileDialogCallback(void* userdata, const char* const* filelist, int /*filter*/)
+{
+    // Si l'utilisateur a annulé, filelist est nullptr (ou son premier élément).
+    if (filelist == nullptr || filelist[0] == nullptr) {
+        return;
+    }
+
+    // L'index de la piste cible a été passé via userdata.
+    const int track = static_cast<int>(reinterpret_cast<intptr_t>(userdata));
+
+    // On stocke le chemin pour que le main thread le charge plus tard.
+    {
+        std::lock_guard<std::mutex> lock(pendingFileMutex);
+        pendingFilePath = filelist[0];
+    }
+    pendingFileTrack.store(track);
+}
 
 static int audioCallback(const void*, void* output,
                          unsigned long framesPerBuffer,
@@ -68,18 +93,10 @@ int main(int, char**)
         printf("Erreur Pa_Initialize: %s\n", Pa_GetErrorText(err));
         return -1;
     }
-    // Charge un fichier sur la piste 0 (kick) pour tester.
-    players[0].loadFile("Kick1.wav", SAMPLE_RATE);
 
     // Câble le player 0 au sequencer.
     for (int t = 0; t < 4; ++t) sequencer.setPlayer(t, &players[t]);
-
-    // Active quelques pas sur la piste 0 pour entendre quelque chose au lancement.
-    sequencer.setStep(0, 0, true);
-    sequencer.setStep(0, 4, true);
-    sequencer.setStep(0, 8, true);
-    sequencer.setStep(0, 12, true);
-
+    
     PaStream* stream = nullptr;
     err = Pa_OpenDefaultStream(
         &stream,
@@ -115,6 +132,22 @@ int main(int, char**)
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
+        // Si un fichier a été sélectionné via le dialog, on le charge maintenant.
+        {
+            const int targetTrack = pendingFileTrack.load();
+            if (targetTrack >= 0) {
+                std::string path;
+                {
+                    std::lock_guard<std::mutex> lock(pendingFileMutex);
+                    path = pendingFilePath;
+                    pendingFilePath.clear();
+                }
+                if (!path.empty()) {
+                    players[targetTrack].loadFile(path, SAMPLE_RATE);
+                }
+                pendingFileTrack.store(-1);
+            }
+        }
         static int selectedTrack = 0;
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -221,10 +254,27 @@ int main(int, char**)
         ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, 0), true);
 
         ImGui::Text("Track %d", selectedTrack + 1);
-        ImGui::Text("(no sample)");
+        if (players[selectedTrack].hasFile()) {
+            ImGui::Text("%s", players[selectedTrack].getFileName().c_str());
+        } else {
+            ImGui::Text("(no sample)");
+        }
 
         if (ImGui::Button("Load sample")) {
-            // À câbler à l'étape suivante.
+            // On filtre pour n'afficher que les .wav.
+            static const SDL_DialogFileFilter filters[] = {
+                { "Fichiers WAV", "wav" }
+            };
+            // userdata = piste cible, on encode l'int dans un void*.
+            SDL_ShowOpenFileDialog(
+                fileDialogCallback,
+                reinterpret_cast<void*>(static_cast<intptr_t>(selectedTrack)),
+                window,           // fenêtre parent (déclarée plus haut dans main)
+                filters,
+                1,                // nombre de filtres
+                nullptr,          // dossier de départ (nullptr = défaut)
+                false             // false = sélection unique
+            );
         }
 
         static bool reverseDummy[4] = {false, false, false, false};

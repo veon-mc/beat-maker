@@ -19,12 +19,14 @@ public:
 
     void setMuted(bool m) { muted.store(m); }
     bool isMuted() const { return muted.load(); }
+    std::string getFileName() const;
 
 private:
     std::mutex bufferMutex;
     std::vector<float> buffer;
     int channels = 0;
     int readPosition = 0;
+    std::string filePath;
 
     std::atomic<bool> playing{false};
     std::atomic<float> volume{1.0f};   // ← nouveau, valeur par défaut max

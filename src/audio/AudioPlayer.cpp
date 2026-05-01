@@ -3,7 +3,6 @@
 
 bool AudioPlayer::loadFile(const std::string& path, int sampleRate)
 {
-    // On stoppe la lecture avant de toucher au buffer.
     playing = false;
 
     std::vector<float> tempBuffer;
@@ -15,9 +14,18 @@ bool AudioPlayer::loadFile(const std::string& path, int sampleRate)
         buffer = std::move(tempBuffer);
         channels = tempChannels;
         readPosition = 0;
+        filePath = path;       // ← NOUVEAU
     }
 
     return !buffer.empty();
+}
+
+std::string AudioPlayer::getFileName() const
+{
+    // Extrait juste le nom du fichier (sans le chemin complet).
+    size_t pos = filePath.find_last_of("/\\");
+    if (pos == std::string::npos) return filePath;
+    return filePath.substr(pos + 1);
 }
 
 void AudioPlayer::start()
