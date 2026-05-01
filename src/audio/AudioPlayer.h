@@ -13,12 +13,20 @@ public:
     void process(float* output, int numFrames);
     bool hasFile() const;
 
+    // Nouveau : volume et mute, pilotés par l'UI.
+    void setVolume(float v) { volume.store(v); }
+    float getVolume() const { return volume.load(); }
+
+    void setMuted(bool m) { muted.store(m); }
+    bool isMuted() const { return muted.load(); }
+
 private:
     std::mutex bufferMutex;
     std::vector<float> buffer;
     int channels = 0;
-
     int readPosition = 0;
 
     std::atomic<bool> playing{false};
+    std::atomic<float> volume{1.0f};   // ← nouveau, valeur par défaut max
+    std::atomic<bool> muted{false};    // ← nouveau
 };

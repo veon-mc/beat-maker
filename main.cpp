@@ -9,10 +9,12 @@
 #include <vector>
 #include "AudioPlayer.h"
 #include "Sequencer.h"
+#include "Mixer.h"
 
 static AudioPlayer players[4];
 static Sequencer sequencer;
 static constexpr int SAMPLE_RATE = 44100;
+static Mixer mixer;
 
 static int audioCallback(const void*, void* output,
                          unsigned long framesPerBuffer,
@@ -22,20 +24,20 @@ static int audioCallback(const void*, void* output,
     float* out = static_cast<float*>(output);
     const int numFrames = static_cast<int>(framesPerBuffer);
 
-    // 1. Le sequencer fait avancer le temps et déclenche les players.
+    // 1. Avance le sequencer.
     sequencer.process(numFrames, SAMPLE_RATE);
 
-    // 2. On mixe les 4 players dans le buffer de sortie.
-    //    On commence par mettre tout à zéro.
+    // 2. Reset du buffer de sortie (silence).
     for (int i = 0; i < numFrames * 2; ++i) out[i] = 0.0f;
 
-    //    Buffer temporaire pour récupérer la sortie de chaque player.
-    static float tempBuffer[256 * 2]; // 256 frames stéréo max
+    // 3. Pour chaque piste : process le player, puis mix dans la sortie.
+    static float tempBuffer[256 * 2];
     for (int t = 0; t < 4; ++t) {
         players[t].process(tempBuffer, numFrames);
-        for (int i = 0; i < numFrames * 2; ++i) {
-            out[i] += tempBuffer[i] * 0.5f; // volume 0.5 par défaut, on changera
-        }
+
+        // Volume effectif = 0 si muté, sinon le volume de la piste.
+        float effectiveVolume = players[t].isMuted() ? 0.0f : players[t].getVolume();
+        mixer.mix(tempBuffer, out, numFrames, effectiveVolume);
     }
 
     return paContinue;
@@ -49,7 +51,8 @@ int main(int, char**)
         return -1;
     }
 
-    SDL_Window* window = SDL_CreateWindow("Drum Machine", 1280, 720, SDL_WINDOW_RESIZABLE);
+    SDL_Window* window = SDL_CreateWindow("Drum Machine", 1280, 250, SDL_WINDOW_RESIZABLE);
+    SDL_SetWindowMinimumSize(window, 1100, 220);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
 
     // ---- Init ImGui ----
@@ -112,22 +115,133 @@ int main(int, char**)
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-        ImGui::Begin("Test");
+        static int selectedTrack = 0;
+
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+
+        ImGuiWindowFlags windowFlags =
+              ImGuiWindowFlags_NoTitleBar      // pas de barre de titre
+            | ImGuiWindowFlags_NoResize        // pas de redimensionnement
+            | ImGuiWindowFlags_NoMove          // pas déplaçable
+            | ImGuiWindowFlags_NoCollapse      // pas de bouton "réduire"
+            | ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+        ImGui::Begin("Drum Machine", nullptr, windowFlags);
+
+        // --- Ligne du haut : Play / BPM (au-dessus, sur toute la largeur) ---
         if (sequencer.isPlaying()) {
             if (ImGui::Button("Stop")) sequencer.stop();
         } else {
             if (ImGui::Button("Play")) sequencer.start();
         }
-        ImGui::Text("Step courant : %d", sequencer.getCurrentStep());
+        ImGui::SameLine();
+        ImGui::Text("   BPM: %.0f", sequencer.getBpm());
+        ImGui::SameLine();
+        if (ImGui::Button("-")) sequencer.setBpm(sequencer.getBpm() - 1.0f);
+        ImGui::SameLine();
+        if (ImGui::Button("+")) sequencer.setBpm(sequencer.getBpm() + 1.0f);
 
-        float bpm = sequencer.getBpm();
-        if (ImGui::SliderFloat("BPM", &bpm, 60.0f, 200.0f)) {
-            sequencer.setBpm(bpm);
+        ImGui::Separator();
+
+        // === ZONE DE GAUCHE : tracks ===
+        // On réserve 250 pixels pour l'inspector à droite.
+        const float inspectorWidth = 250.0f;
+        const float availableWidth = ImGui::GetContentRegionAvail().x;
+        const float tracksWidth = availableWidth - inspectorWidth - 8.0f; // 8 = espace entre les deux
+
+        ImGui::BeginChild("TracksZone", ImVec2(tracksWidth, 0), false);
+
+        const int currentStep = sequencer.getCurrentStep();
+        const ImVec2 cellSize(28, 28);
+        const ImVec4 colorOff        (0.20f, 0.20f, 0.20f, 1.0f);
+        const ImVec4 colorOn         (0.20f, 0.75f, 0.75f, 1.0f);
+        const ImVec4 colorPlayhead   (0.95f, 0.85f, 0.20f, 1.0f);
+        const ImVec4 colorOnPlayhead (0.50f, 0.95f, 0.95f, 1.0f);
+
+        for (int track = 0; track < 4; ++track) {
+            ImGui::PushID(track);
+
+            const bool isSelected = (selectedTrack == track);
+            if (isSelected) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.85f, 1.0f));
+            }
+            if (ImGui::Button(("Track " + std::to_string(track + 1)).c_str(), ImVec2(70, cellSize.y))) {
+                selectedTrack = track;
+            }
+            if (isSelected) ImGui::PopStyleColor();
+
+            for (int step = 0; step < 16; ++step) {
+                ImGui::SameLine();
+                ImGui::PushID(step);
+
+                const bool isActive = sequencer.getStep(track, step);
+                const bool isPlayhead = sequencer.isPlaying() && (step == currentStep);
+
+                ImVec4 color;
+                if (isActive && isPlayhead)      color = colorOnPlayhead;
+                else if (isActive)               color = colorOn;
+                else if (isPlayhead)             color = colorPlayhead;
+                else                             color = colorOff;
+
+                if (ImGui::ColorButton("##cell", color,
+                                       ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                                       cellSize))
+                {
+                    sequencer.setStep(track, step, !isActive);
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::SameLine();
+            float vol = players[track].getVolume();
+            ImGui::SetNextItemWidth(100);
+            if (ImGui::SliderFloat("##vol", &vol, 0.0f, 1.0f, "%.2f")) {
+                players[track].setVolume(vol);
+            }
+
+            ImGui::SameLine();
+            bool muted = players[track].isMuted();
+            if (muted) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                if (ImGui::Button("M", ImVec2(28, cellSize.y))) players[track].setMuted(false);
+                ImGui::PopStyleColor();
+            } else {
+                if (ImGui::Button("M", ImVec2(28, cellSize.y))) players[track].setMuted(true);
+            }
+
+            ImGui::PopID();
         }
+
+        ImGui::EndChild();
+
+        // === ZONE DE DROITE : Inspector ===
+        ImGui::SameLine();
+        ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, 0), true);
+
+        ImGui::Text("Track %d", selectedTrack + 1);
+        ImGui::Text("(no sample)");
+
+        if (ImGui::Button("Load sample")) {
+            // À câbler à l'étape suivante.
+        }
+
+        static bool reverseDummy[4] = {false, false, false, false};
+        static bool delayDummy[4]   = {false, false, false, false};
+        static float delayTimeDummy[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        static float delayMixDummy[4]  = {0.0f, 0.0f, 0.0f, 0.0f};
+
+        ImGui::Checkbox("Reverse", &reverseDummy[selectedTrack]);
+        ImGui::Checkbox("Delay",   &delayDummy[selectedTrack]);
+        ImGui::SetNextItemWidth(150);
+        ImGui::SliderFloat("Delay time", &delayTimeDummy[selectedTrack], 0.0f, 1.0f, "%.3f");
+        ImGui::SetNextItemWidth(150);
+        ImGui::SliderFloat("Delay mix",  &delayMixDummy[selectedTrack],  0.0f, 1.0f, "%.3f");
+
+        ImGui::EndChild();
+
         ImGui::End();
-
-
-        ImGui::ShowDemoWindow();
 
         ImGui::Render();
         SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255);
