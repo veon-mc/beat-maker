@@ -30,7 +30,18 @@ std::string AudioPlayer::getFileName() const
 
 void AudioPlayer::start()
 {
-    readPosition = 0;
+    // En mode normal on part du début, en mode reverse on part de la fin.
+    if (reverse.load()) {
+        std::lock_guard<std::mutex> lock(bufferMutex);
+        if (!buffer.empty() && channels > 0) {
+            const int totalFrames = static_cast<int>(buffer.size()) / channels;
+            readPosition = totalFrames - 1;
+        } else {
+            readPosition = 0;
+        }
+    } else {
+        readPosition = 0;
+    }
     playing = true;
 }
 
@@ -42,10 +53,13 @@ void AudioPlayer::process(float* output, int numFrames)
         return;
     }
 
-    const int totalFramesInBuffer = static_cast<int>(buffer.size()) / channels;
+    const int totalFrames = static_cast<int>(buffer.size()) / channels;
+    const bool isReverse = reverse.load();
 
     for (int i = 0; i < numFrames; ++i) {
-        if (readPosition >= totalFramesInBuffer) {
+        // Vérification des limites selon le sens de lecture.
+        const bool atEnd = isReverse ? (readPosition < 0) : (readPosition >= totalFrames);
+        if (atEnd) {
             output[i * 2] = 0.0f;
             output[i * 2 + 1] = 0.0f;
             playing = false;
@@ -54,13 +68,16 @@ void AudioPlayer::process(float* output, int numFrames)
 
         if (channels == 1) {
             float sample = buffer[readPosition];
-            output[i * 2] = sample;
+            output[i * 2]     = sample;
             output[i * 2 + 1] = sample;
         } else {
-            output[i * 2] = buffer[readPosition * 2];
+            output[i * 2]     = buffer[readPosition * 2];
             output[i * 2 + 1] = buffer[readPosition * 2 + 1];
         }
-        readPosition++;
+
+        // Avance dans le sens choisi.
+        if (isReverse) readPosition--;
+        else           readPosition++;
     }
 }
 

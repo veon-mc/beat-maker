@@ -20,6 +20,8 @@ public:
     void setMuted(bool m) { muted.store(m); }
     bool isMuted() const { return muted.load(); }
     std::string getFileName() const;
+    void setReverse(bool r) { reverse.store(r); }
+    bool isReverse() const { return reverse.load(); }
 
 private:
     std::mutex bufferMutex;
@@ -27,6 +29,7 @@ private:
     int channels = 0;
     int readPosition = 0;
     std::string filePath;
+    std::atomic<bool> reverse{false};
 
     std::atomic<bool> playing{false};
     std::atomic<float> volume{1.0f};   // ← nouveau, valeur par défaut max

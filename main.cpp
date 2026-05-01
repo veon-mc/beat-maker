@@ -96,7 +96,7 @@ int main(int, char**)
 
     // Câble le player 0 au sequencer.
     for (int t = 0; t < 4; ++t) sequencer.setPlayer(t, &players[t]);
-    
+
     PaStream* stream = nullptr;
     err = Pa_OpenDefaultStream(
         &stream,
@@ -276,13 +276,15 @@ int main(int, char**)
                 false             // false = sélection unique
             );
         }
-
-        static bool reverseDummy[4] = {false, false, false, false};
+        
         static bool delayDummy[4]   = {false, false, false, false};
         static float delayTimeDummy[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         static float delayMixDummy[4]  = {0.0f, 0.0f, 0.0f, 0.0f};
 
-        ImGui::Checkbox("Reverse", &reverseDummy[selectedTrack]);
+        bool reverseState = players[selectedTrack].isReverse();
+        if (ImGui::Checkbox("Reverse", &reverseState)) {
+            players[selectedTrack].setReverse(reverseState);
+        }
         ImGui::Checkbox("Delay",   &delayDummy[selectedTrack]);
         ImGui::SetNextItemWidth(150);
         ImGui::SliderFloat("Delay time", &delayTimeDummy[selectedTrack], 0.0f, 1.0f, "%.3f");
