@@ -15,11 +15,13 @@ include_directories(
 
 add_executable(drum_machine
         main.cpp
+        src/audio/AudioFileReader.cpp
         src/audio/AudioPlayer.cpp
         src/audio/Delay.cpp
         src/audio/Mixer.cpp
         src/audio/Sequencer.cpp
         src/audio/DrumMachine.cpp
+        src/audio/Preferences.cpp
         src/ui/MainWindow.cpp
         libraries/imgui/imgui.cpp
         libraries/imgui/imgui_demo.cpp
@@ -28,23 +30,6 @@ add_executable(drum_machine
         libraries/imgui/imgui_tables.cpp
         libraries/imgui/backends/imgui_impl_sdl3.cpp
         libraries/imgui/backends/imgui_impl_sdlrenderer3.cpp
-        src/audio/Mixer.cpp
-        src/audio/Mixer.h
-        src/audio/Mixer.h
-        src/audio/AudioPlayer.cpp
-        src/audio/Delay.cpp
-        src/audio/Sequencer.cpp
-        src/audio/DrumMachine.cpp
-        src/ui/MainWindow.cpp
-        src/audio/AudioFileReader.h
-        src/audio/AudioFileReader.cpp
-        src/audio/AudioPlayer.h
-        src/audio/Sequencer.h
-        src/audio/Delay.h
-        src/audio/Preferences.h
-        src/audio/Preferences.cpp
-        src/audio/DrumMachine.h
-        src/ui/MainWindow.h
 )
 
 if (APPLE)
