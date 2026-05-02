@@ -6,6 +6,15 @@
 #include "MainWindow.h"
 #include <cstdio>
 
+/**
+ * @brief Application entry point.
+ *
+ * Sets up SDL window, ImGui context, the DrumMachine audio engine
+ * and the MainWindow UI, then runs the rendering loop. Cleans up
+ * everything on exit.
+ *
+ * @return 0 on normal exit, -1 if SDL or audio initialization failed.
+ */
 int main(int, char**)
 {
     // ---- SDL setup ----
