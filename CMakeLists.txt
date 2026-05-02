@@ -44,6 +44,7 @@ add_executable(drum_machine
         src/audio/Preferences.h
         src/audio/Preferences.cpp
         src/audio/DrumMachine.h
+        src/ui/MainWindow.h
 )
 
 if (APPLE)
