@@ -10,7 +10,7 @@ void Sequencer::setPlayer(int trackIndex, AudioPlayer* player)
 
 void Sequencer::start()
 {
-    // Reset complet à chaque play.
+    // Full reset on each play.
     currentBeat = 0.0;
     lastStepTriggered = -1;
     currentStep.store(0);
@@ -20,7 +20,7 @@ void Sequencer::start()
 void Sequencer::stop()
 {
     playing.store(false);
-    currentStep.store(0); 
+    currentStep.store(0); // reset playhead to step 0 (see spec section 4.1.2)
 }
 
 void Sequencer::setStep(int track, int step, bool active)
@@ -42,18 +42,19 @@ void Sequencer::process(int numFrames, int sampleRate)
 {
     if (!playing.load()) return;
 
-    // Combien de beats représente ce buffer ?
-    const double beatsPerBuffer = (double)numFrames * bpm.load() / (60.0 * sampleRate);
+    // How many beats does this buffer represent?
+    const double beatsPerBuffer = static_cast<double>(numFrames) * bpm.load() / (60.0 * sampleRate);
 
-    // On avance dans le temps musical.
+    // Advance musical time.
     currentBeat += beatsPerBuffer;
 
-    // Un pas = 1/4 de beat. 16 pas = 4 beats. On boucle modulo 4 beats.
+    // One step = 1/4 beat. 16 steps = 4 beats. Loop modulo 4 beats.
     if (currentBeat >= 4.0) currentBeat -= 4.0;
 
+    // Which step should be active right now?
     const int step = static_cast<int>(currentBeat / 0.25) % NUM_STEPS;
 
-    // Si on vient de changer de pas, on déclenche les sons.
+    // If we just crossed a step boundary, trigger the matching sounds.
     if (step != lastStepTriggered) {
         for (int track = 0; track < NUM_TRACKS; ++track) {
             if (grid[track][step].load() && players[track] != nullptr) {

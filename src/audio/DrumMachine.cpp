@@ -11,27 +11,27 @@ DrumMachine::~DrumMachine()
 
 bool DrumMachine::init()
 {
-    // 1. Initialise PortAudio.
+    // 1. Init PortAudio.
     PaError err = Pa_Initialize();
     if (err != paNoError) {
         printf("Pa_Initialize: %s\n", Pa_GetErrorText(err));
         return false;
     }
 
-    // 2. Initialise les delays.
+    // 2. Init each delay's ring buffer.
     for (int t = 0; t < NUM_TRACKS; ++t) {
         delays[t].init(SAMPLE_RATE, 1.0f);
     }
 
-    // 3. Connecte les players au sequencer.
+    // 3. Wire players to the sequencer.
     for (int t = 0; t < NUM_TRACKS; ++t) {
         sequencer.setPlayer(t, &players[t]);
     }
 
-    // 4. Charge les préférences.
+    // 4. Load saved preferences (auto-loads sample paths from previous session).
     loadPreferences();
 
-    // 5. Ouvre le flux audio en passant 'this' comme userData.
+    // 5. Open the audio stream, passing 'this' as userData.
     err = Pa_OpenDefaultStream(
         &stream, 0, 2, paFloat32,
         SAMPLE_RATE, BUFFER_SIZE,
@@ -74,13 +74,13 @@ int DrumMachine::audioCallbackStatic(const void*, void* output,
 
 int DrumMachine::audioCallback(float* output, int numFrames)
 {
-    // 1. Avance le sequencer (peut déclencher des players).
+    // 1. Advance the sequencer (may trigger players).
     sequencer.process(numFrames, SAMPLE_RATE);
 
-    // 2. Reset du buffer de sortie.
+    // 2. Reset the output buffer to silence.
     for (int i = 0; i < numFrames * 2; ++i) output[i] = 0.0f;
 
-    // 3. Pour chaque piste : process player → delay → mix.
+    // 3. For each track: process player -> delay -> mix into output.
     for (int t = 0; t < NUM_TRACKS; ++t) {
         players[t].process(tempBuffer, numFrames);
         delays[t].process(tempBuffer, numFrames);
@@ -110,7 +110,7 @@ void DrumMachine::loadPreferences()
     }
 }
 
-void DrumMachine::savePreferences()
+void DrumMachine::savePreferences() const
 {
     std::array<std::string, NUM_TRACKS> paths;
     for (int t = 0; t < NUM_TRACKS; ++t) {

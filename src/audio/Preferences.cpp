@@ -7,13 +7,13 @@ std::array<std::string, Preferences::NUM_TRACKS> Preferences::load(const std::st
 
     std::ifstream file(filename);
     if (!file.is_open()) {
-        // Pas de fichier de préférences : on retourne 4 chemins vides.
+        // No preferences file yet: return 4 empty paths.
         return paths;
     }
 
     for (int i = 0; i < NUM_TRACKS; ++i) {
         if (!std::getline(file, paths[i])) {
-            // Fin de fichier prématurée, on laisse les chemins suivants vides.
+            // End of file reached early; remaining paths stay empty.
             break;
         }
     }

@@ -8,7 +8,7 @@
 
 int main(int, char**)
 {
-    // ---- Init SDL ----
+    // ---- SDL setup ----
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         printf("SDL_Init: %s\n", SDL_GetError());
         return -1;
@@ -18,21 +18,21 @@ int main(int, char**)
     SDL_SetWindowMinimumSize(window, 1100, 220);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
 
-    // ---- Init ImGui ----
+    // ---- ImGui setup ----
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
 
-    // ---- Init du moteur audio ----
+    // ---- Audio engine setup ----
     DrumMachine drumMachine;
     if (!drumMachine.init()) return -1;
 
-    // ---- Init de l'UI ----
+    // ---- UI setup ----
     MainWindow mainWindow(drumMachine, window);
 
-    // ---- Boucle principale ----
+    // ---- Main loop ----
     bool running = true;
     while (running) {
         SDL_Event event;
@@ -54,7 +54,7 @@ int main(int, char**)
         SDL_RenderPresent(renderer);
     }
 
-    // ---- Nettoyage ----
+    // ---- Cleanup ----
     drumMachine.shutdown();
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();

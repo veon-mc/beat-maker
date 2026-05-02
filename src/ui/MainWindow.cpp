@@ -9,7 +9,7 @@ void MainWindow::draw()
 {
     consumePendingFileLoad();
 
-    // Fenêtre ImGui occupant toute la viewport, sans barre de titre.
+    // ImGui window covering the full viewport, no title bar.
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
@@ -67,6 +67,7 @@ void MainWindow::drawTracks()
     for (int track = 0; track < 4; ++track) {
         ImGui::PushID(track);
 
+        // Track selection button: highlighted when this track is selected.
         const bool isSelected = (selectedTrack == track);
         if (isSelected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.85f, 1.0f));
         if (ImGui::Button(("Track " + std::to_string(track + 1)).c_str(), ImVec2(70, cellSize.y))) {
@@ -74,6 +75,7 @@ void MainWindow::drawTracks()
         }
         if (isSelected) ImGui::PopStyleColor();
 
+        // 16-step grid for this track.
         for (int step = 0; step < 16; ++step) {
             ImGui::SameLine();
             ImGui::PushID(step);
@@ -92,6 +94,7 @@ void MainWindow::drawTracks()
             ImGui::PopID();
         }
 
+        // Volume slider, on the same line as the grid.
         ImGui::SameLine();
         float vol = drumMachine.getPlayer(track).getVolume();
         ImGui::SetNextItemWidth(100);
@@ -99,6 +102,7 @@ void MainWindow::drawTracks()
             drumMachine.getPlayer(track).setVolume(vol);
         }
 
+        // Mute button (toggles, turns red when muted).
         ImGui::SameLine();
         bool muted = drumMachine.getPlayer(track).isMuted();
         if (muted) {
@@ -156,19 +160,18 @@ void MainWindow::drawInspector()
 
 void MainWindow::openFileDialog(int track)
 {
-    static const SDL_DialogFileFilter filters[] = { { "Fichiers WAV", "wav" } };
+    static const SDL_DialogFileFilter filters[] = { { "WAV files", "wav" } };
 
-    // Astuce userdata : on encode (this, track) en stockant juste la piste cible
-    // dans pendingFileTrack en avance. La callback retrouve l'instance via 'this'.
-    pendingFileTrack.store(-2); // -2 = "en attente, pas encore choisi"
+    // Remember which track to assign the loaded file to.
+    pendingFileTargetTrack = track;
+    pendingFileTrack.store(-2); // -2 = waiting, no choice yet
+
     SDL_ShowOpenFileDialog(
         fileDialogCallback,
-        this,                    // userdata = pointeur vers MainWindow
+        this,                    // userdata = pointer to this MainWindow
         sdlWindow,
         filters, 1, nullptr, false
     );
-    // On note la piste cible localement via une variable membre annexe :
-    pendingFileTargetTrack = track;
 }
 
 void SDLCALL MainWindow::fileDialogCallback(void* userdata,
@@ -177,6 +180,7 @@ void SDLCALL MainWindow::fileDialogCallback(void* userdata,
 {
     auto* self = static_cast<MainWindow*>(userdata);
     if (filelist == nullptr || filelist[0] == nullptr) {
+        // User cancelled the dialog.
         self->pendingFileTrack.store(-1);
         return;
     }
