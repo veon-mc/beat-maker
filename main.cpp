@@ -2,41 +2,20 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include <SDL3/SDL.h>
-#include <portaudio.h>
-#include <cstdio>
-#include <cmath>
-#include "AudioFileReader.h"
-#include <vector>
-#include "AudioPlayer.h"
-#include "Sequencer.h"
-#include "Mixer.h"
+#include "DrumMachine.h"
+#include <string>
 #include <mutex>
 #include <atomic>
-#include "Delay.h"
-#include "Preferences.h"
 
-static AudioPlayer players[4];
-static Sequencer sequencer;
-static constexpr int SAMPLE_RATE = 44100;
-static Mixer mixer;
-static Delay delays[4];
 // État partagé pour la boîte de dialogue de fichier.
 static std::mutex pendingFileMutex;
-static std::string pendingFilePath;       // chemin sélectionné, vide si rien à charger
-static std::atomic<int> pendingFileTrack{-1}; // sur quelle piste charger (-1 = rien)
+static std::string pendingFilePath;
+static std::atomic<int> pendingFileTrack{-1};
 
-// Callback appelée par SDL quand l'utilisateur a choisi un fichier (ou annulé).
-static void SDLCALL fileDialogCallback(void* userdata, const char* const* filelist, int /*filter*/)
+static void SDLCALL fileDialogCallback(void* userdata, const char* const* filelist, int)
 {
-    // Si l'utilisateur a annulé, filelist est nullptr (ou son premier élément).
-    if (filelist == nullptr || filelist[0] == nullptr) {
-        return;
-    }
-
-    // L'index de la piste cible a été passé via userdata.
+    if (filelist == nullptr || filelist[0] == nullptr) return;
     const int track = static_cast<int>(reinterpret_cast<intptr_t>(userdata));
-
-    // On stocke le chemin pour que le main thread le charge plus tard.
     {
         std::lock_guard<std::mutex> lock(pendingFileMutex);
         pendingFilePath = filelist[0];
@@ -44,48 +23,11 @@ static void SDLCALL fileDialogCallback(void* userdata, const char* const* fileli
     pendingFileTrack.store(track);
 }
 
-static int audioCallback(const void*, void* output,
-                         unsigned long framesPerBuffer,
-                         const PaStreamCallbackTimeInfo*,
-                         PaStreamCallbackFlags, void*)
-{
-    float* out = static_cast<float*>(output);
-    const int numFrames = static_cast<int>(framesPerBuffer);
-
-    // 1. Avance le sequencer.
-    sequencer.process(numFrames, SAMPLE_RATE);
-
-    // 2. Reset du buffer de sortie (silence).
-    for (int i = 0; i < numFrames * 2; ++i) out[i] = 0.0f;
-
-    // 3. Pour chaque piste : process le player, puis mix dans la sortie.
-    static float tempBuffer[256 * 2];
-    for (int t = 0; t < 4; ++t) {
-        players[t].process(tempBuffer, numFrames);
-        delays[t].process(tempBuffer, numFrames);
-
-        // Volume effectif = 0 si muté, sinon le volume de la piste.
-        float effectiveVolume = players[t].isMuted() ? 0.0f : players[t].getVolume();
-        mixer.mix(tempBuffer, out, numFrames, effectiveVolume);
-    }
-
-    return paContinue;
-}
-
-static void savePreferences()
-{
-    std::array<std::string, 4> paths;
-    for (int t = 0; t < 4; ++t) {
-        paths[t] = players[t].getFilePath();
-    }
-    Preferences::save(paths);
-}
-
 int main(int, char**)
 {
-    // ---- Init SDL + fenêtre + renderer ----
+    // ---- Init SDL ----
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        printf("Erreur SDL_Init: %s\n", SDL_GetError());
+        printf("SDL_Init: %s\n", SDL_GetError());
         return -1;
     }
 
@@ -100,63 +42,26 @@ int main(int, char**)
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
 
-    // ---- Init PortAudio ----
-    PaError err = Pa_Initialize();
-    if (err != paNoError) {
-        printf("Erreur Pa_Initialize: %s\n", Pa_GetErrorText(err));
-        return -1;
-    }
-    for (int t = 0; t < 4; ++t) {
-        delays[t].init(SAMPLE_RATE, 1.0f);
-    }
-
-    // ---- Chargement des préférences ----
-    auto savedPaths = Preferences::load();
-    for (int t = 0; t < Preferences::NUM_TRACKS && t < 4; ++t) {
-        if (!savedPaths[t].empty()) {
-            players[t].loadFile(savedPaths[t], SAMPLE_RATE);
-        }
-    }
-
-    // Câble le player 0 au sequencer.
-    for (int t = 0; t < 4; ++t) sequencer.setPlayer(t, &players[t]);
-
-    PaStream* stream = nullptr;
-    err = Pa_OpenDefaultStream(
-        &stream,
-        0,            // pas de canaux d'entrée
-        2,            // 2 canaux de sortie (stéréo)
-        paFloat32,    // format des échantillons : float
-        44100,        // fréquence d'échantillonnage
-        256,          // taille du buffer en frames
-        audioCallback,
-        nullptr       // données utilisateur (on en mettra plus tard)
-    );
-    if (err != paNoError) {
-        printf("Erreur Pa_OpenDefaultStream: %s\n", Pa_GetErrorText(err));
-        return -1;
-    }
-
-    err = Pa_StartStream(stream);
-    if (err != paNoError) {
-        printf("Erreur Pa_StartStream: %s\n", Pa_GetErrorText(err));
-        return -1;
-    }
+    // ---- Init du moteur audio ----
+    DrumMachine drumMachine;
+    if (!drumMachine.init()) return -1;
 
     // ---- Boucle principale ----
     bool running = true;
+    static int selectedTrack = 0;
+
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
-            if (event.type == SDL_EVENT_QUIT)
-                running = false;
+            if (event.type == SDL_EVENT_QUIT) running = false;
         }
 
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-        // Si un fichier a été sélectionné via le dialog, on le charge maintenant.
+
+        // --- Charge un fichier si l'utilisateur en a sélectionné un ---
         {
             const int targetTrack = pendingFileTrack.load();
             if (targetTrack >= 0) {
@@ -167,28 +72,25 @@ int main(int, char**)
                     pendingFilePath.clear();
                 }
                 if (!path.empty()) {
-                    players[targetTrack].loadFile(path, SAMPLE_RATE);
-                    savePreferences();
+                    drumMachine.loadFile(targetTrack, path);
                 }
                 pendingFileTrack.store(-1);
             }
         }
-        static int selectedTrack = 0;
 
+        // --- UI plein écran ---
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->Pos);
         ImGui::SetNextWindowSize(viewport->Size);
-
         ImGuiWindowFlags windowFlags =
-              ImGuiWindowFlags_NoTitleBar      // pas de barre de titre
-            | ImGuiWindowFlags_NoResize        // pas de redimensionnement
-            | ImGuiWindowFlags_NoMove          // pas déplaçable
-            | ImGuiWindowFlags_NoCollapse      // pas de bouton "réduire"
+              ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+            | ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse
             | ImGuiWindowFlags_NoBringToFrontOnFocus;
-
         ImGui::Begin("Drum Machine", nullptr, windowFlags);
 
-        // --- Ligne du haut : Play / BPM (au-dessus, sur toute la largeur) ---
+        Sequencer& sequencer = drumMachine.getSequencer();
+
+        // --- Barre du haut ---
         if (sequencer.isPlaying()) {
             if (ImGui::Button("Stop")) sequencer.stop();
         } else {
@@ -203,12 +105,9 @@ int main(int, char**)
 
         ImGui::Separator();
 
-        // === ZONE DE GAUCHE : tracks ===
-        // On réserve 250 pixels pour l'inspector à droite.
+        // --- Layout : tracks à gauche, inspector à droite ---
         const float inspectorWidth = 250.0f;
-        const float availableWidth = ImGui::GetContentRegionAvail().x;
-        const float tracksWidth = availableWidth - inspectorWidth - 8.0f; // 8 = espace entre les deux
-
+        const float tracksWidth = ImGui::GetContentRegionAvail().x - inspectorWidth - 8.0f;
         ImGui::BeginChild("TracksZone", ImVec2(tracksWidth, 0), false);
 
         const int currentStep = sequencer.getCurrentStep();
@@ -222,9 +121,7 @@ int main(int, char**)
             ImGui::PushID(track);
 
             const bool isSelected = (selectedTrack == track);
-            if (isSelected) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.85f, 1.0f));
-            }
+            if (isSelected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.85f, 1.0f));
             if (ImGui::Button(("Track " + std::to_string(track + 1)).c_str(), ImVec2(70, cellSize.y))) {
                 selectedTrack = track;
             }
@@ -233,40 +130,36 @@ int main(int, char**)
             for (int step = 0; step < 16; ++step) {
                 ImGui::SameLine();
                 ImGui::PushID(step);
-
                 const bool isActive = sequencer.getStep(track, step);
                 const bool isPlayhead = sequencer.isPlaying() && (step == currentStep);
-
-                ImVec4 color;
-                if (isActive && isPlayhead)      color = colorOnPlayhead;
-                else if (isActive)               color = colorOn;
-                else if (isPlayhead)             color = colorPlayhead;
-                else                             color = colorOff;
-
+                ImVec4 color = isActive && isPlayhead ? colorOnPlayhead :
+                               isActive ? colorOn :
+                               isPlayhead ? colorPlayhead : colorOff;
                 if (ImGui::ColorButton("##cell", color,
                                        ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
-                                       cellSize))
-                {
+                                       cellSize)) {
                     sequencer.setStep(track, step, !isActive);
                 }
                 ImGui::PopID();
             }
 
             ImGui::SameLine();
-            float vol = players[track].getVolume();
+            float vol = drumMachine.getPlayer(track).getVolume();
             ImGui::SetNextItemWidth(100);
             if (ImGui::SliderFloat("##vol", &vol, 0.0f, 1.0f, "%.2f")) {
-                players[track].setVolume(vol);
+                drumMachine.getPlayer(track).setVolume(vol);
             }
 
             ImGui::SameLine();
-            bool muted = players[track].isMuted();
+            bool muted = drumMachine.getPlayer(track).isMuted();
             if (muted) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-                if (ImGui::Button("M", ImVec2(28, cellSize.y))) players[track].setMuted(false);
+                if (ImGui::Button("M", ImVec2(28, cellSize.y)))
+                    drumMachine.getPlayer(track).setMuted(false);
                 ImGui::PopStyleColor();
             } else {
-                if (ImGui::Button("M", ImVec2(28, cellSize.y))) players[track].setMuted(true);
+                if (ImGui::Button("M", ImVec2(28, cellSize.y)))
+                    drumMachine.getPlayer(track).setMuted(true);
             }
 
             ImGui::PopID();
@@ -274,59 +167,52 @@ int main(int, char**)
 
         ImGui::EndChild();
 
-        // === ZONE DE DROITE : Inspector ===
+        // --- Inspector ---
         ImGui::SameLine();
         ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, 0), true);
 
         ImGui::Text("Track %d", selectedTrack + 1);
-        if (players[selectedTrack].hasFile()) {
-            ImGui::Text("%s", players[selectedTrack].getFileName().c_str());
+        if (drumMachine.getPlayer(selectedTrack).hasFile()) {
+            ImGui::Text("%s", drumMachine.getPlayer(selectedTrack).getFileName().c_str());
         } else {
             ImGui::Text("(no sample)");
         }
 
         if (ImGui::Button("Load sample")) {
-            // On filtre pour n'afficher que les .wav.
-            static const SDL_DialogFileFilter filters[] = {
-                { "Fichiers WAV", "wav" }
-            };
-            // userdata = piste cible, on encode l'int dans un void*.
+            static const SDL_DialogFileFilter filters[] = { { "Fichiers WAV", "wav" } };
             SDL_ShowOpenFileDialog(
                 fileDialogCallback,
                 reinterpret_cast<void*>(static_cast<intptr_t>(selectedTrack)),
-                window,           // fenêtre parent (déclarée plus haut dans main)
-                filters,
-                1,                // nombre de filtres
-                nullptr,          // dossier de départ (nullptr = défaut)
-                false             // false = sélection unique
+                window, filters, 1, nullptr, false
             );
         }
 
-        bool reverseState = players[selectedTrack].isReverse();
+        bool reverseState = drumMachine.getPlayer(selectedTrack).isReverse();
         if (ImGui::Checkbox("Reverse", &reverseState)) {
-            players[selectedTrack].setReverse(reverseState);
-        }
-        bool delayState = delays[selectedTrack].isEnabled();
-        if (ImGui::Checkbox("Delay", &delayState)) {
-            delays[selectedTrack].setEnabled(delayState);
+            drumMachine.getPlayer(selectedTrack).setReverse(reverseState);
         }
 
-        float delayTime = delays[selectedTrack].getTime();
+        bool delayState = drumMachine.getDelay(selectedTrack).isEnabled();
+        if (ImGui::Checkbox("Delay", &delayState)) {
+            drumMachine.getDelay(selectedTrack).setEnabled(delayState);
+        }
+
+        float delayTime = drumMachine.getDelay(selectedTrack).getTime();
         ImGui::SetNextItemWidth(150);
         if (ImGui::SliderFloat("Delay time", &delayTime, 0.0f, 1.0f, "%.3f")) {
-            delays[selectedTrack].setTime(delayTime);
+            drumMachine.getDelay(selectedTrack).setTime(delayTime);
         }
 
-        float delayMix = delays[selectedTrack].getMix();
+        float delayMix = drumMachine.getDelay(selectedTrack).getMix();
         ImGui::SetNextItemWidth(150);
         if (ImGui::SliderFloat("Delay mix", &delayMix, 0.0f, 1.0f, "%.3f")) {
-            delays[selectedTrack].setMix(delayMix);
+            drumMachine.getDelay(selectedTrack).setMix(delayMix);
         }
 
         ImGui::EndChild();
-
         ImGui::End();
 
+        // --- Rendu ---
         ImGui::Render();
         SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255);
         SDL_RenderClear(renderer);
@@ -335,16 +221,12 @@ int main(int, char**)
     }
 
     // ---- Nettoyage ----
-    Pa_StopStream(stream);
-    Pa_CloseStream(stream);
-    Pa_Terminate();
-
+    drumMachine.shutdown();   // PortAudio
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-
     return 0;
 }
