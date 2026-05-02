@@ -22,6 +22,7 @@ public:
     std::string getFileName() const;
     void setReverse(bool r) { reverse.store(r); }
     bool isReverse() const { return reverse.load(); }
+    std::string getFilePath() const { return filePath; }
 
 private:
     std::mutex bufferMutex;

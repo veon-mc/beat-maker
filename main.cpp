@@ -13,6 +13,7 @@
 #include <mutex>
 #include <atomic>
 #include "Delay.h"
+#include "Preferences.h"
 
 static AudioPlayer players[4];
 static Sequencer sequencer;
@@ -71,6 +72,15 @@ static int audioCallback(const void*, void* output,
     return paContinue;
 }
 
+static void savePreferences()
+{
+    std::array<std::string, 4> paths;
+    for (int t = 0; t < 4; ++t) {
+        paths[t] = players[t].getFilePath();
+    }
+    Preferences::save(paths);
+}
+
 int main(int, char**)
 {
     // ---- Init SDL + fenêtre + renderer ----
@@ -98,6 +108,14 @@ int main(int, char**)
     }
     for (int t = 0; t < 4; ++t) {
         delays[t].init(SAMPLE_RATE, 1.0f);
+    }
+
+    // ---- Chargement des préférences ----
+    auto savedPaths = Preferences::load();
+    for (int t = 0; t < Preferences::NUM_TRACKS && t < 4; ++t) {
+        if (!savedPaths[t].empty()) {
+            players[t].loadFile(savedPaths[t], SAMPLE_RATE);
+        }
     }
 
     // Câble le player 0 au sequencer.
@@ -150,6 +168,7 @@ int main(int, char**)
                 }
                 if (!path.empty()) {
                     players[targetTrack].loadFile(path, SAMPLE_RATE);
+                    savePreferences();
                 }
                 pendingFileTrack.store(-1);
             }

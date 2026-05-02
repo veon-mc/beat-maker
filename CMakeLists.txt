@@ -41,6 +41,8 @@ add_executable(drum_machine
         src/audio/AudioPlayer.h
         src/audio/Sequencer.h
         src/audio/Delay.h
+        src/audio/Preferences.h
+        src/audio/Preferences.cpp
 )
 
 if (APPLE)
