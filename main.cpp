@@ -35,8 +35,13 @@ int main(int, char**)
     ImGui_ImplSDLRenderer3_Init(renderer);
 
     // ---- Audio engine setup ----
+    // If audio init fails (e.g. no audio device available), we keep
+    // the UI running so the user can still see the interface.
     DrumMachine drumMachine;
-    if (!drumMachine.init()) return -1;
+    bool audioOk = drumMachine.init();
+    if (!audioOk) {
+        printf("Audio initialization failed. App will continue without audio.\n");
+    }
 
     // ---- UI setup ----
     MainWindow mainWindow(drumMachine, window);
