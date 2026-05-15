@@ -32,14 +32,34 @@ bool DrumMachine::init()
     loadPreferences();
 
     // 5. Open the audio stream, passing 'this' as userData.
-    err = Pa_OpenDefaultStream(
-        &stream, 0, 2, paFloat32,
-        SAMPLE_RATE, BUFFER_SIZE,
+    // Configure the output device explicitly to be more reliable across
+    // machines. Pa_OpenDefaultStream sometimes fails on systems where the
+    // driver expects a specific latency value.
+    PaStreamParameters outputParameters{};
+    outputParameters.device = Pa_GetDefaultOutputDevice();
+    if (outputParameters.device == paNoDevice) {
+        printf("No default audio output device found.\n");
+        return false;
+    }
+
+    const PaDeviceInfo* deviceInfo = Pa_GetDeviceInfo(outputParameters.device);
+    outputParameters.channelCount = 2;                                  // stereo
+    outputParameters.sampleFormat = paFloat32;
+    outputParameters.suggestedLatency = deviceInfo->defaultLowOutputLatency;
+    outputParameters.hostApiSpecificStreamInfo = nullptr;
+
+    err = Pa_OpenStream(
+        &stream,
+        nullptr,              // no input
+        &outputParameters,
+        SAMPLE_RATE,
+        BUFFER_SIZE,
+        paNoFlag,
         &DrumMachine::audioCallbackStatic,
         this
     );
     if (err != paNoError) {
-        printf("Pa_OpenDefaultStream: %s\n", Pa_GetErrorText(err));
+        printf("Pa_OpenStream: %s\n", Pa_GetErrorText(err));
         return false;
     }
 
