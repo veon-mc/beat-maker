@@ -1,9 +1,8 @@
-## Premiers pas
+## Getting Started
 
-1. Clonez ce dépot git en local.
-2. Dans le dossier raçine du clone, invoquez la commande reprise ci-dessous
-pour intégrer le sous-module Git contenant les librairies précompilées.
-
+1. Clone this repository locally.
+2. From the root folder of the clone, run the command below to fetch
+   the Git submodule containing the precompiled libraries.
 ```
 $ git submodule update --init libraries
 ```
